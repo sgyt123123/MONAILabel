@@ -23,8 +23,11 @@ public:
     json next_sample(const char* selector, std::string body);
     void download_image(const char* selector, std::string image);
     void upload(std::string path, std::string image);
-    void infer(std::string model, std::string image_in, std::string label_in = "");
+    json infer(std::string model, std::string image_in, std::string label_in = "");
     void train_start(std::string model, std::string params = "");
+    void train_stop();
+    json train_status(bool check_if_running = false);
+    void save_label(std::string image_id, std::string label_in = "", std::string tag = "");
 
 private:
 

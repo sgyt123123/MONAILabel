@@ -1,4 +1,5 @@
 #include "monailabelclient.h"
+#include "monailabel.h"
 #include <QDebug>
 #include <QMimeDatabase>
 #include <QByteArray>
@@ -10,6 +11,9 @@ MONAILabelClient::MONAILabelClient(QObject *parent, QUrl url, std::string tmp_di
     , cli(url.host().toStdString(), url.port())
 {
     cli.set_read_timeout(3600000);
+//    connect(this, &MONAILabelClient::value_change, [parent](int value){
+//        dynamic_cast<Widget*>(parent)->set_value(value);
+//    });
 }
 
 void MONAILabelClient::setUrl(QString u)
@@ -97,7 +101,7 @@ void MONAILabelClient::upload(std::string path, std::string image)
 
 }
 
-void MONAILabelClient::infer(std::string model, std::string image_in, std::string label_in)
+json MONAILabelClient::infer(std::string model, std::string image_in, std::string label_in)
 {
 
     std::string selector = "/infer/" + model + "?image=" + image_in;
@@ -113,6 +117,8 @@ void MONAILabelClient::infer(std::string model, std::string image_in, std::strin
 
     qDebug() << selector.c_str();
     qDebug() << body.c_str();
+
+    json labelpaths;
 
     auto res = cli.Post(selector.c_str(), headers, body, content_type.c_str());
     if(res->status == 200){
@@ -144,7 +150,12 @@ void MONAILabelClient::infer(std::string model, std::string image_in, std::strin
             }
             else if(line.find(partition) != line.npos && is_file){
                 end = sum;
-                save(tmp_dir + '/' + label_in + name, formdata.substr(start, end));
+
+                //auto namepath = g_GlobalVal.FileFullPath.toStdString();
+                auto labelpath = tmp_dir + '/' + label_in + "_Label.nii.gz";
+                labelpaths.push_back(labelpath);
+                save(labelpath, formdata.substr(start, end));
+
                 is_file = false;
             }
 
@@ -156,6 +167,8 @@ void MONAILabelClient::infer(std::string model, std::string image_in, std::strin
     }
     else
         qDebug("url connect failed! error = %d",(int)res.error());
+
+    return labelpaths;
 }
 
 void MONAILabelClient::train_start(std::string model, std::string params)
@@ -173,6 +186,70 @@ void MONAILabelClient::train_start(std::string model, std::string params)
     }
     else
         qDebug("url connect failed! error = %d\n",(int)res.error());
+}
+
+void MONAILabelClient::train_stop()
+{
+    auto selector = "/train/";
+
+    std::string body;
+
+    httplib::Headers headers{ {"content-length", QString::number(body.size()).toStdString()} };
+
+    auto res = cli.Delete(selector, headers, body, "application/json");
+
+    if (res->status == 200) {
+        qDebug() << "Request succeeded.";
+        json Response{ json::parse(res->body) };
+        qDebug() << Response.dump().c_str();
+    }
+    else
+        qDebug("url connect failed! error = %d\n", (int)res.error());
+}
+
+json MONAILabelClient::train_status(bool check_if_running)
+{
+    std::string selector = "/train/";
+    if (check_if_running)
+        selector += "?check_if_running=true";
+
+    if (auto res = cli.Get(selector.c_str())) {
+        printf("status:%d\n", res->status);
+        if (res->status == 200) {
+            json Response{ json::parse(res->body) };
+            return Response;
+        }
+    }
+    else
+        printf("url connect failed! error = %d\n", (int)res.error());
+
+    return {};
+}
+
+
+
+void MONAILabelClient::save_label(std::string image_id, std::string label_in, std::string tag)
+{
+    auto selector = "/datastore/label?image=" + image_id;
+    if (tag != "")
+        selector += ("&tag=" + tag);
+
+    json fields = json::parse("{\"params\":{\"client_id\": null}}");
+    json files = json::parse("{\"label\":\"" + label_in + "\"}");
+
+    auto [body, content_type] = encode_multipart_formdata(fields, files);
+
+    httplib::Headers headers{ {"content-length", QString::number(body.size()).toStdString()} };
+
+    auto res = cli.Put(selector.c_str(), headers, body, content_type.c_str());
+
+    if (res->status == 200) {
+        qDebug() << "Request succeeded.";
+        json Response{ json::parse(res->body) };
+        qDebug() << Response.dump().c_str();
+    }
+    else
+        qDebug("url connect failed! error = %d\n", (int)res.error());
 }
 
 
